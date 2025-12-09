@@ -1,0 +1,18 @@
+---
+# Rol principal para gestión de certificados de OpenShift
+# Este rol extrae certificados existentes, verifica su expiración y los reemplaza si es necesario
+
+- name: Debug - Mostrar clusters disponibles
+  ansible.builtin.debug:
+    msg: "Clusters disponibles: {{ clusters | default('undefined') }}"
+
+- name: Debug - Mostrar clusters con token resuelto
+  ansible.builtin.debug:
+    msg: "Clusters con token resuelto: {{ clusters | selectattr('token','defined') | rejectattr('token','search','{{') | list }}"
+
+- name: Procesar cada cluster
+  ansible.builtin.include_tasks: process_cluster.yml
+  loop: "{{ clusters | default([]) }}"
+  loop_control:
+    loop_var: current_cluster
+    label: "{{ current_cluster.name | default('unknown') }}"

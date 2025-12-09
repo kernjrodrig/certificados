@@ -1,0 +1,49 @@
+---
+# Playbook de prueba para el rol certificado
+# Este archivo demuestra cómo usar el rol con diferentes configuraciones
+
+- name: Prueba del Rol de Certificados - Solo Verificación
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ../../vars.yml
+  roles:
+    - role: ../../
+      vars:
+        clusters:
+          - name: "{{ item.name }}"
+            api_url: "{{ item.api_url }}"
+            token: "{{ item.token }}"
+            secret_name: "{{ item.secret_name }}"
+            namespace_ingress: "{{ item.namespace_ingress }}"
+            cert_file: "{{ item.cert_file }}"
+            namespace_ingress_operator: "{{ item.namespace_ingress_operator }}"
+            ingress_controller_name: "{{ item.ingress_controller_name }}"
+  loop: "{{ clusters }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Prueba del Rol de Certificados - Con Reemplazo
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ../../vars.yml
+  roles:
+    - role: ../../
+      vars:
+        clusters:
+          - name: "{{ item.name }}"
+            api_url: "{{ item.api_url }}"
+            token: "{{ item.token }}"
+            secret_name: "{{ item.secret_name }}"
+            namespace_ingress: "{{ item.namespace_ingress }}"
+            cert_file: "{{ item.cert_file }}"
+            cert_file_new: "{{ item.cert_file_new }}"
+            key_file_new: "{{ item.key_file_new }}"
+            backup_file: "{{ item.backup_file }}"
+            namespace_ingress_operator: "{{ item.namespace_ingress_operator }}"
+            ingress_controller_name: "{{ item.ingress_controller_name }}"
+  loop: "{{ clusters }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.cert_file_new is defined and item.key_file_new is defined

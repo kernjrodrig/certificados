@@ -1,0 +1,64 @@
+---
+# Procesar un cluster individual
+# Este archivo contiene las tareas originales del main.yml pero para un cluster específico
+
+- name: Obtener secreto TLS del cluster {{ current_cluster.name }}
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ current_cluster.secret_name }}"
+    namespace: "{{ current_cluster.namespace_ingress }}"
+    verify_ssl: false
+  register: secret_data
+  no_log: false
+
+- name: Validar existencia del secreto en el cluster {{ current_cluster.name }}
+  ansible.builtin.fail:
+    msg: "El secreto {{ current_cluster.secret_name }} no existe en el namespace {{ current_cluster.namespace_ingress }} del cluster {{ current_cluster.name }}"
+  when: secret_data.resources | length == 0
+
+- name: Extraer y guardar certificado en un archivo temporal para el cluster {{ current_cluster.name }}
+  ansible.builtin.copy:
+    content: "{{ secret_data.resources[0].data['tls.crt'] | b64decode }}"
+    dest: "{{ current_cluster.cert_file }}"
+    mode: '0600'
+  when: secret_data.resources | length > 0
+
+- name: Obtener información del certificado del cluster {{ current_cluster.name }}
+  community.crypto.x509_certificate_info:
+    path: "{{ current_cluster.cert_file }}"
+  register: cert_info
+  failed_when: cert_info.not_after is not defined
+
+- name: Obtener timestamp UNIX de la fecha de expiración
+  ansible.builtin.set_fact:
+    expiry_timestamp: "{{ (cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int }}"
+  when: cert_info.not_after is defined
+
+- name: Definir el timestamp actual
+  ansible.builtin.set_fact:
+    current_timestamp: "{{ ansible_date_time.epoch | int }}"
+  when: ansible_date_time is defined
+
+- name: Definir el timestamp actual (fallback)
+  ansible.builtin.set_fact:
+    current_timestamp: "{{ lookup('pipe', 'date +%s') | int }}"
+  when: ansible_date_time is not defined
+
+- name: Calcular días hasta el vencimiento
+  ansible.builtin.set_fact:
+    days_to_expiry: "{{ (((expiry_timestamp | int) - (current_timestamp | int)) / 86400) | int }}"
+  when: expiry_timestamp is defined
+
+- name: Mostrar días restantes para el vencimiento del certificado del cluster {{ current_cluster.name }}
+  ansible.builtin.debug:
+    msg: "Faltan {{ days_to_expiry }} días para el vencimiento del certificado del cluster {{ current_cluster.name }}"
+  when: expiry_timestamp is defined
+
+- name: Incluir tareas de reemplazo si el certificado expira en menos de {{ certificate.replacement_threshold_days | default(60) }} días
+  ansible.builtin.include_tasks: replace_certificate.yml
+  vars:
+    cluster: "{{ current_cluster }}"
+  when: days_to_expiry is defined and (days_to_expiry | int) < (certificate.replacement_threshold_days | default(60) | int)

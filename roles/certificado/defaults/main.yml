@@ -1,0 +1,41 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Variables por defecto para el rol de gestión de certificados de OpenShift
+
+# Configuración del cluster
+cluster:
+  name: "default"
+  api_url: ""
+  token: ""
+  secret_name: "ingress-tls-secret"
+  namespace_ingress: "openshift-ingress"
+  namespace_ingress_operator: "openshift-ingress-operator"
+  ingress_controller_name: "default"
+  
+  # Archivos de certificados
+  cert_file: "/tmp/{{ cluster.name }}-ingress-cert.pem"
+  cert_file_new: ""
+  key_file_new: ""
+  backup_file: "/tmp/ingress-backup-{{ cluster.name }}.yaml"
+
+# Configuración de certificados
+certificate:
+  # Días antes de la expiración para reemplazar automáticamente
+  replacement_threshold_days: 60
+  
+  # Días mínimos de validez para nuevos certificados
+  min_validity_days: 30
+  
+  # Permisos de archivos de certificados
+  cert_file_mode: "0600"
+  backup_file_mode: "0644"
+
+# Configuración de Kubernetes
+kubernetes:
+  verify_ssl: false
+  api_version: "v1"
+  
+# Configuración de logging
+logging:
+  verbose: false
+  debug: false

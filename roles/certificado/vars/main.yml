@@ -1,0 +1,41 @@
+#SPDX-License-Identifier: MIT-0
+---
+# Variables del rol de gestión de certificados de OpenShift
+# Estas variables pueden ser sobrescritas en el playbook o inventario
+
+# Lista de clusters a procesar
+clusters: []
+
+# Configuración de certificados específica del entorno
+certificate:
+  # Directorio donde se almacenan los nuevos certificados
+  source_directory: "{{ playbook_dir }}/certs"
+  
+  # Extensión de archivos de certificados
+  cert_extension: ".pem"
+  key_extension: ".key"
+  
+  # Directorio temporal para archivos de trabajo
+  temp_directory: "/tmp"
+
+# Configuración de respaldos
+backup:
+  # Habilitar respaldos automáticos
+  enabled: true
+  
+  # Directorio para respaldos
+  directory: "{{ playbook_dir }}/backups"
+  
+  # Retener respaldos por X días
+  retention_days: 30
+
+# Configuración de notificaciones
+notifications:
+  # Habilitar notificaciones
+  enabled: false
+  
+  # Tipo de notificación (email, slack, webhook)
+  type: "email"
+  
+  # Configuración específica según el tipo
+  config: {}

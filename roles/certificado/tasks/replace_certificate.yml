@@ -1,0 +1,101 @@
+---
+# Tareas para reemplazar certificados de OpenShift
+# Este archivo se incluye cuando un certificado expira en menos de 60 días
+
+- name: Validar el nuevo certificado antes de actualizar
+  community.crypto.x509_certificate_info:
+    path: "{{ cluster.cert_file_new }}"
+  register: new_cert_info
+  failed_when: new_cert_info.not_after is not defined
+
+- name: Validar que el nuevo certificado no esté vencido
+  ansible.builtin.fail:
+    msg: "El nuevo certificado {{ cluster.cert_file_new }} ya está vencido."
+  when: new_cert_info.not_after is defined and (new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int < (current_timestamp | int)
+
+- name: Validar que el nuevo certificado sea válido por al menos {{ certificate.min_validity_days | default(30) }} días
+  ansible.builtin.fail:
+    msg: "El nuevo certificado {{ cluster.cert_file_new }} debe ser válido por al menos {{ certificate.min_validity_days | default(30) }} días."
+  when: new_cert_info.not_after is defined and ((new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int - (current_timestamp | int)) < ((certificate.min_validity_days | default(30) | int) * 24 * 3600)
+
+- name: Crear secreto TLS para el certificado de ingreso
+  kubernetes.core.k8s:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    state: present
+    validate_certs: false
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ cluster.secret_name }}"
+        namespace: "{{ cluster.namespace_ingress }}"
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ lookup('file', cluster.cert_file_new) | b64encode }}"
+        tls.key: "{{ lookup('file', cluster.key_file_new) | b64encode }}"
+  register: secret_result
+
+- name: Verificar existencia del secreto
+  kubernetes.core.k8s_info:
+    kind: Secret
+    name: "{{ cluster.secret_name }}"
+    namespace: "{{ cluster.namespace_ingress }}"
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    validate_certs: false
+  register: secret_check
+  failed_when: secret_check.resources | length == 0
+
+- name: Mostrar resultado de la verificación del secreto
+  ansible.builtin.debug:
+    msg: "Secreto {{ cluster.secret_name }} creado exitosamente en {{ cluster.namespace_ingress }}"
+
+- name: Obtener información del Ingress Controller
+  kubernetes.core.k8s_info:
+    kind: IngressController
+    api_version: operator.openshift.io/v1
+    name: "{{ cluster.ingress_controller_name | default('default') }}"
+    namespace: "{{ cluster.namespace_ingress_operator | default('openshift-ingress-operator') }}"
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    validate_certs: false
+  register: ingress_controller_info
+
+- name: Actualizar Ingress Controller con el certificado
+  kubernetes.core.k8s:
+    state: present
+    kind: IngressController
+    api_version: operator.openshift.io/v1
+    name: "{{ cluster.ingress_controller_name | default('default') }}"
+    namespace: "{{ cluster.namespace_ingress_operator | default('openshift-ingress-operator') }}"
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    validate_certs: false
+    definition:
+      spec:
+        defaultCertificate:
+          name: "{{ cluster.secret_name }}"
+  register: ingress_update_result
+
+- name: Mostrar resultado de la actualización
+  ansible.builtin.debug:
+    msg: "Ingress Controller {{ cluster.ingress_controller_name | default('default') }} actualizado con el secreto {{ cluster.secret_name }}"
+
+- name: Obtener información del recurso ingresses.config/cluster
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: "cluster"
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    validate_certs: false
+  register: ingress_config_info
+
+- name: Guardar dominio en una variable
+  ansible.builtin.set_fact:
+    cluster_domain_name: "{{ ingress_config_info.resources[0].spec.domain }}"
+
+- name: Mostrar dominio del clúster
+  ansible.builtin.debug:
+    msg: "Dominio del clúster: {{ cluster_domain_name }}" 

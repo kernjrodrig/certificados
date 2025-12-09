@@ -1,0 +1,65 @@
+---
+galaxy_info:
+  author: "Tu Nombre"
+  description: "Rol de Ansible para gestión automática de certificados TLS en clusters de OpenShift"
+  company: "Tu Empresa"
+  
+  # Categorías del rol
+  categories:
+    - networking
+    - security
+    - openshift
+    - kubernetes
+  
+  # Plataformas soportadas
+  platforms:
+    - name: EL
+      versions:
+        - 7
+        - 8
+        - 9
+    - name: Fedora
+      versions:
+        - 35
+        - 36
+        - 37
+        - 38
+        - 39
+        - 40
+        - 41
+        - 42
+    - name: Ubuntu
+      versions:
+        - bionic
+        - focal
+        - jammy
+        - lunar
+        - mantic
+  
+  # Versión mínima de Ansible
+  min_ansible_version: "2.9"
+  
+  # Versión mínima de Python
+  min_python_version: "3.6"
+  
+  # Licencia
+  license: "MIT"
+  
+  # Tags para búsqueda
+  tags:
+    - openshift
+    - kubernetes
+    - tls
+    - certificates
+    - ingress
+    - security
+    - automation
+
+  # URLs del proyecto
+  repository: "https://github.com/tuusuario/ansible-role-certificado"
+  documentation: "https://github.com/tuusuario/ansible-role-certificado/blob/main/README.md"
+  homepage: "https://github.com/tuusuario/ansible-role-certificado"
+  issues: "https://github.com/tuusuario/ansible-role-certificado/issues"
+
+# Dependencias del rol
+dependencies: []

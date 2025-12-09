@@ -1,0 +1,33 @@
+---
+# Playbook principal que usa el rol de certificados
+# Este playbook reemplaza la funcionalidad de los playbooks originales
+
+- name: Gestión de Certificados de OpenShift usando Rol
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Debug - Mostrar variables cargadas
+      ansible.builtin.debug:
+        msg: "Variables clusters: {{ clusters | default('undefined') }}"
+  roles:
+    - role: certificado
+
+# Alternativa: Procesar clusters uno por uno
+# - name: Procesar cada cluster individualmente
+#   hosts: localhost
+#   gather_facts: true
+#   vars_files:
+#     - vars.yml
+#   tasks:
+#     - name: Aplicar rol a cada cluster
+#       include_role:
+#         name: certificado
+#       vars:
+#         cluster: "{{ item }}"
+#       loop: "{{ clusters }}"
+#       loop_control:
+#         label: "{{ item.name }}" 

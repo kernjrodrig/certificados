@@ -1,0 +1,51 @@
+# Certificados y llaves privadas (NUNCA incluir en el repo)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.csr
+
+# Directorio de certificados
+certs/
+*.certs/
+
+# Ansible
+.ansible/
+*.retry
+.vault_pass
+vault_pass.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+ansible-env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Archivos temporales
+*.tmp
+*.bak
+*.backup
+
