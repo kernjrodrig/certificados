@@ -21,6 +21,6 @@ dependencies:
   
   # Colecciones de Ansible
   # Usamos requirements-collections.yml que solo tiene community.crypto
-  # (kubernetes.core ya está en la imagen base)
+  # (kubernetes.core ya está en la imagen base v1)
   galaxy: requirements-collections.yml
 
