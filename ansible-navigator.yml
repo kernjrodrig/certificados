@@ -1,0 +1,6 @@
+---
+ansible-navigator:
+  execution-environment:
+    image: quay.io/kjavier_rodriguez/mi-ee-kubernetes:v2
+    pull:
+      policy: always

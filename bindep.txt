@@ -1,0 +1,11 @@
+# Dependencias del sistema operativo para el Execution Environment
+# Formato: nombre-paquete [opcional: plataforma]
+
+# OpenSSL es necesario para validaciones de certificados
+openssl [platform:rpm]
+openssl [platform:dpkg]
+
+# Herramientas adicionales útiles
+ca-certificates [platform:rpm]
+ca-certificates [platform:dpkg]
+

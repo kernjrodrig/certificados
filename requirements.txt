@@ -1,0 +1,18 @@
+# Dependencias Python para el Execution Environment
+# Estas son las dependencias Python necesarias para las colecciones de Ansible
+
+# Para kubernetes.core
+kubernetes>=18.0.0
+openshift>=0.13.0
+PyYAML>=5.4.1
+requests>=2.25.1
+urllib3>=1.26.0
+
+# Para community.crypto
+cryptography>=3.4.8
+pyOpenSSL>=20.0.0
+
+# Utilidades adicionales
+jinja2>=3.0.0
+netaddr>=0.8.0
+

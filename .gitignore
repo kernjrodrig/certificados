@@ -43,9 +43,20 @@ Thumbs.db
 
 # Logs
 *.log
+ansible-navigator.log
+ansible-navigator.v1
 
 # Archivos temporales
 *.tmp
 *.bak
 *.backup
+
+# Artifacts de ansible-navigator
+playbook-with-role-artifact-*.json
+
+# Directorio de build de ansible-builder
+context/
+
+# Archivos de configuración temporal de ansible-navigator
+ansible-navigator.v1
 

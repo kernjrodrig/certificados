@@ -5,29 +5,20 @@
 - name: Gestión de Certificados de OpenShift usando Rol
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true  # Necesario para tener ansible_facts disponibles
   become: false
-  vars_files:
-    - vars.yml
-  tasks:
+  vars:
+    # Definir role_path antes de cargar vars.yml para que las variables puedan usarlo
+    role_path: "{{ playbook_dir }}/roles/certificado"
+  pre_tasks:
+    # Cargar variables desde vars.yml usando include_vars (más confiable con ansible-navigator)
+    # Esto carga las variables directamente en el scope del playbook
+    - name: Cargar variables desde vars.yml
+      ansible.builtin.include_vars:
+        file: vars.yml
     - name: Debug - Mostrar variables cargadas
       ansible.builtin.debug:
         msg: "Variables clusters: {{ clusters | default('undefined') }}"
   roles:
     - role: certificado
 
-# Alternativa: Procesar clusters uno por uno
-# - name: Procesar cada cluster individualmente
-#   hosts: localhost
-#   gather_facts: true
-#   vars_files:
-#     - vars.yml
-#   tasks:
-#     - name: Aplicar rol a cada cluster
-#       include_role:
-#         name: certificado
-#       vars:
-#         cluster: "{{ item }}"
-#       loop: "{{ clusters }}"
-#       loop_control:
-#         label: "{{ item.name }}" 

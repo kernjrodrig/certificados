@@ -2,11 +2,72 @@
 # Tareas para reemplazar certificados de OpenShift
 # Este archivo se incluye cuando un certificado expira en menos de 60 días
 
+- name: Obtener secreto TLS actual para backup antes del reemplazo
+  kubernetes.core.k8s_info:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ cluster.secret_name }}"
+    namespace: "{{ cluster.namespace_ingress }}"
+    verify_ssl: false
+  register: current_secret_backup
+  no_log: false
+
+- name: Crear directorio de backup si no existe
+  ansible.builtin.file:
+    path: "{{ cluster.backup_file | dirname }}"
+    state: directory
+    mode: '0700'
+  when: cluster.backup_file is defined and cluster.backup_file != ""
+
+- name: Guardar backup completo del secreto antes del reemplazo
+  ansible.builtin.copy:
+    content: "{{ current_secret_backup.resources[0] | to_nice_yaml }}"
+    dest: "{{ cluster.backup_file }}"
+    mode: "{{ certificate.backup_file_mode | default('0600') }}"
+  when: 
+    - current_secret_backup.resources | length > 0
+    - cluster.backup_file is defined
+    - cluster.backup_file != ""
+  register: backup_result
+
+- name: Mostrar información del backup realizado
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backup del secreto guardado exitosamente"
+      - "📁 Ubicación: {{ cluster.backup_file }}"
+      - "📋 Secreto: {{ cluster.secret_name }} en namespace {{ cluster.namespace_ingress }}"
+      - "⏰ Backup creado antes del reemplazo del certificado"
+  when: backup_result is defined and backup_result.changed
+
 - name: Validar el nuevo certificado antes de actualizar
   community.crypto.x509_certificate_info:
     path: "{{ cluster.cert_file_new }}"
   register: new_cert_info
   failed_when: new_cert_info.not_after is not defined
+
+- name: Calcular días restantes del nuevo certificado
+  ansible.builtin.set_fact:
+    new_cert_days_remaining: "{{ (((new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int) - (current_timestamp | int)) // 86400 | int }}"
+  when: new_cert_info.not_after is defined
+
+- name: Formatear fechas del nuevo certificado
+  ansible.builtin.set_fact:
+    new_cert_valid_from: "{{ (new_cert_info.not_before | to_datetime('%Y%m%d%H%M%SZ')).strftime('%d/%m/%Y %H:%M:%S UTC') }}"
+    new_cert_valid_until: "{{ (new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).strftime('%d/%m/%Y %H:%M:%S UTC') }}"
+  when: new_cert_info.not_after is defined
+
+- name: Mostrar información del certificado a aplicar
+  ansible.builtin.debug:
+    msg:
+      - "📋 Información del certificado a aplicar:"
+      - "   Subject: {{ new_cert_info.subject }}"
+      - "   Issuer: {{ new_cert_info.issuer }}"
+      - "   Válido desde: {{ new_cert_valid_from }}"
+      - "   Válido hasta: {{ new_cert_valid_until }}"
+      - "   📊 Días restantes: {{ new_cert_days_remaining }}"
+  when: new_cert_info.not_after is defined
 
 - name: Validar que el nuevo certificado no esté vencido
   ansible.builtin.fail:
@@ -17,6 +78,58 @@
   ansible.builtin.fail:
     msg: "El nuevo certificado {{ cluster.cert_file_new }} debe ser válido por al menos {{ certificate.min_validity_days | default(30) }} días."
   when: new_cert_info.not_after is defined and ((new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int - (current_timestamp | int)) < ((certificate.min_validity_days | default(30) | int) * 24 * 3600)
+
+- name: Verificar que la llave privada existe
+  ansible.builtin.stat:
+    path: "{{ cluster.key_file_new }}"
+  register: key_file_stat
+
+- name: Validar existencia de la llave privada
+  ansible.builtin.fail:
+    msg: "La llave privada {{ cluster.key_file_new }} no existe."
+  when: not key_file_stat.stat.exists
+
+- name: Validar que el certificado y la llave privada corresponden
+  ansible.builtin.shell: |
+    cert_modulus=$(openssl x509 -noout -modulus -in "{{ cluster.cert_file_new }}" 2>/dev/null | openssl md5 | awk '{print $NF}')
+    key_modulus=$(openssl rsa -noout -modulus -in "{{ cluster.key_file_new }}" 2>/dev/null | openssl md5 | awk '{print $NF}')
+    if [ "$cert_modulus" = "$key_modulus" ]; then
+      echo "MATCH"
+    else
+      echo "NO_MATCH"
+    fi
+  register: cert_key_match
+  changed_when: false
+  failed_when: cert_key_match.stdout != "MATCH"
+
+- name: Mostrar resultado de validación certificado-llave
+  ansible.builtin.debug:
+    msg:
+      - "✅ Validación: Certificado y llave privada CORRESPONDEN"
+      - "   El certificado {{ cluster.cert_file_new }} y la llave {{ cluster.key_file_new }} son compatibles"
+  when: cert_key_match.stdout == "MATCH"
+
+- name: Verificar cadena de certificados en el archivo
+  ansible.builtin.shell: |
+    cert_count=$(grep -c "BEGIN CERTIFICATE" "{{ cluster.cert_file_new }}" 2>/dev/null || echo "0")
+    echo "$cert_count"
+  register: cert_chain_count
+  changed_when: false
+  failed_when: false
+
+- name: Analizar cadena de certificados
+  ansible.builtin.set_fact:
+    cert_chain_info: "{{ cert_chain_count.stdout | int }}"
+    has_chain: "{{ (cert_chain_count.stdout | int) > 1 }}"
+
+- name: Mostrar información de la cadena de certificados
+  ansible.builtin.debug:
+    msg:
+      - "🔗 Análisis de cadena de certificados:"
+      - "   Certificados encontrados en el archivo: {{ cert_chain_info }}"
+      - "   {{ '✅ Cadena completa detectada (certificado + intermedios)' if has_chain else '⚠️  Solo certificado del servidor (sin intermedios)' }}"
+      - "   {{ '   Nota: Se recomienda incluir la cadena completa para mejor compatibilidad' if not has_chain else '' }}"
+  when: cert_chain_info is defined
 
 - name: Crear secreto TLS para el certificado de ingreso
   kubernetes.core.k8s:

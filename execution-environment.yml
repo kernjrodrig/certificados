@@ -1,0 +1,26 @@
+---
+# Execution Environment definition para el rol de certificados
+# Este archivo se usa con ansible-builder para construir un EE con todas las dependencias
+
+version: 3
+
+# Imagen base
+# Usamos tu imagen existente como base (ya tiene kubernetes.core)
+# Solo necesitamos agregar community.crypto
+images:
+  base_image:
+    name: quay.io/kjavier_rodriguez/mi-ee-kubernetes:v1
+
+# Dependencias
+dependencies:
+  # Dependencias de Python (paquetes pip)
+  python: requirements.txt
+  
+  # Dependencias del sistema (paquetes del sistema operativo)
+  system: bindep.txt
+  
+  # Colecciones de Ansible
+  # Usamos requirements-collections.yml que solo tiene community.crypto
+  # (kubernetes.core ya está en la imagen base)
+  galaxy: requirements-collections.yml
+

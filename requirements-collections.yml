@@ -1,0 +1,8 @@
+---
+# Archivo de requirements solo para colecciones adicionales
+# La imagen base ya tiene kubernetes.core, solo necesitamos community.crypto
+
+collections:
+  - name: community.crypto
+    version: ">=1.0.0"
+
