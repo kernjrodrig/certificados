@@ -1,0 +1,13 @@
+# Ansible YAML files
+*.yml linguist-language=YAML
+*.yaml linguist-language=YAML
+
+# Shell scripts (utilities)
+scripts/*.sh linguist-language=Shell
+
+# Markdown documentation
+*.md linguist-language=Markdown
+
+# Force repository language detection
+* linguist-detectable=true
+
