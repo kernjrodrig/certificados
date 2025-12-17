@@ -1,0 +1,83 @@
+---
+# Playbook para analizar certificados en el directorio certs
+- name: Analizar certificados en el directorio certs
+  hosts: localhost
+  gather_facts: false
+  become: false
+  vars:
+    certs_dir: "{{ playbook_dir }}/certs"
+
+  tasks:
+    - name: Listar archivos de certificados
+      ansible.builtin.find:
+        paths: "{{ certs_dir }}"
+        patterns:
+          - "*.crt"
+          - "*.cer"
+          - "*.pem"
+          - "*.key"
+          - "*.pfx"
+        file_type: file
+      register: cert_files
+
+    - name: Mostrar archivos encontrados
+      ansible.builtin.debug:
+        msg: "Archivos encontrados: {{ cert_files.files | map(attribute='path') | list }}"
+
+    - name: Analizar certificados .crt y .cer
+      community.crypto.x509_certificate_info:
+        path: "{{ item.path }}"
+      register: cert_info
+      loop: "{{ cert_files.files }}"
+      when: item.path | regex_search('\.(crt|cer|pem)$')
+      ignore_errors: true
+
+    - name: Mostrar información detallada de cada certificado
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════════════"
+          - "📄 Certificado: {{ item.item.path | basename }}"
+          - "📁 Ruta completa: {{ item.item.path }}"
+          - "📋 Subject: {{ item.cert_info.subject | default('N/A') }}"
+          - "🏢 Issuer: {{ item.cert_info.issuer | default('N/A') }}"
+          - "📅 Válido desde: {{ (item.cert_info.not_before | to_datetime('%Y%m%d%H%M%SZ')).strftime('%d/%m/%Y %H:%M:%S UTC') if item.cert_info.not_before is defined else 'N/A' }}"
+          - "⏰ Válido hasta: {{ (item.cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).strftime('%d/%m/%Y %H:%M:%S UTC') if item.cert_info.not_after is defined else 'N/A' }}"
+          - "📊 Días restantes: {{ (((item.cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int) - (lookup('pipe', 'date +%s') | int)) // 86400 | int if item.cert_info.not_after is defined else 'N/A' }}"
+          - "🔐 Serial Number: {{ item.cert_info.serial_number | default('N/A') }}"
+          - "🔑 Key Size: {{ item.cert_info.public_key | default('N/A') }}"
+          - "═══════════════════════════════════════════════════════════════"
+      loop: "{{ cert_info.results | default([]) }}"
+      when: 
+        - item.cert_info is defined
+        - item.cert_info.not_after is defined
+      loop_control:
+        label: "{{ item.item.path | basename }}"
+
+    - name: Verificar llaves privadas
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: key_files
+      loop: "{{ cert_files.files }}"
+      when: item.path | regex_search('\.(key)$')
+
+    - name: Mostrar información de llaves privadas
+      ansible.builtin.debug:
+        msg:
+          - "🔑 Llave privada: {{ item.item.path | basename }}"
+          - "📁 Ruta: {{ item.item.path }}"
+          - "📊 Tamaño: {{ item.stat.size | default(0) }} bytes"
+          - "🔒 Permisos: {{ item.stat.mode | default('N/A') }}"
+      loop: "{{ key_files.results | default([]) }}"
+      when: item.stat.exists
+
+    - name: Resumen de certificados
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════════════"
+          - "📊 RESUMEN DE CERTIFICADOS"
+          - "═══════════════════════════════════════════════════════════════"
+          - "Total de archivos encontrados: {{ cert_files.files | length }}"
+          - "Certificados analizados: {{ cert_info.results | selectattr('cert_info', 'defined') | selectattr('cert_info.not_after', 'defined') | list | length }}"
+          - "Llaves privadas: {{ key_files.results | selectattr('stat.exists') | list | length }}"
+          - "═══════════════════════════════════════════════════════════════"
+

@@ -57,8 +57,8 @@
     msg: "Faltan {{ days_to_expiry }} días para el vencimiento del certificado del cluster {{ current_cluster.name }}"
   when: expiry_timestamp is defined
 
-- name: Incluir tareas de reemplazo si el certificado expira en menos de {{ certificate.replacement_threshold_days | default(60) }} días
+- name: Incluir tareas de reemplazo si el certificado expira en menos de {{ certificate.replacement_threshold_days | default(200) }} días
   ansible.builtin.include_tasks: replace_certificate.yml
   vars:
     cluster: "{{ current_cluster }}"
-  when: days_to_expiry is defined and (days_to_expiry | int) < (certificate.replacement_threshold_days | default(60) | int)
+  when: days_to_expiry is defined and (days_to_expiry | int) < (certificate.replacement_threshold_days | default(200) | int)

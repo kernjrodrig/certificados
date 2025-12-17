@@ -41,11 +41,97 @@
       - "⏰ Backup creado antes del reemplazo del certificado"
   when: backup_result is defined and backup_result.changed
 
-- name: Validar el nuevo certificado antes de actualizar
+- name: Obtener fecha actual en formato YYYYMMDD
+  ansible.builtin.set_fact:
+    current_date: "{{ ansible_date_time.date | replace('-', '') }}"
+  when: ansible_date_time is defined
+
+- name: Obtener fecha actual en formato YYYYMMDD (fallback)
+  ansible.builtin.set_fact:
+    current_date: "{{ lookup('pipe', 'date +%Y%m%d') }}"
+  when: ansible_date_time is not defined
+
+- name: Definir nombres de recursos con fecha
+  ansible.builtin.set_fact:
+    configmap_name: "{{ cluster.configmap_name_prefix | default('custom-ca') }}-{{ current_date }}"
+    secret_name_with_date: "{{ cluster.secret_name_prefix | default('router-certs') }}-{{ current_date }}"
+
+- name: Verificar existencia de archivos de certificados
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: cert_files_stat
+  loop:
+    - "{{ cluster.cert_file_crt }}"
+    - "{{ cluster.ca_intermedia_file }}"
+    - "{{ cluster.ca_raiz_file }}"
+  failed_when: false
+
+- name: Validar que todos los archivos de certificados existen
+  ansible.builtin.fail:
+    msg: "El archivo {{ item.item }} no existe. Verifica la ruta en vars.yml"
+  loop: "{{ cert_files_stat.results }}"
+  when: not item.stat.exists
+
+- name: Leer contenido de los certificados individuales
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: cert_contents
+  loop:
+    - "{{ cluster.cert_file_crt }}"
+    - "{{ cluster.ca_intermedia_file }}"
+    - "{{ cluster.ca_raiz_file }}"
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Unir certificados (servidor + CA intermedia + CA raíz) en archivo .pem
+  ansible.builtin.copy:
+    content: "{{ cert_contents.results | map(attribute='content') | map('b64decode') | join('') }}"
+    dest: "{{ cluster.cert_file_combined }}"
+    mode: '0600'
+  register: combine_certs_result
+
+- name: Mostrar información de certificados combinados
+  ansible.builtin.debug:
+    msg:
+      - "🔗 Certificados combinados exitosamente"
+      - "   Certificado servidor: {{ cluster.cert_file_crt }}"
+      - "   CA Intermedia: {{ cluster.ca_intermedia_file }}"
+      - "   CA Raíz: {{ cluster.ca_raiz_file }}"
+      - "   Archivo combinado: {{ cluster.cert_file_combined }}"
+
+- name: Validar el nuevo certificado combinado antes de actualizar
   community.crypto.x509_certificate_info:
-    path: "{{ cluster.cert_file_new }}"
+    path: "{{ cluster.cert_file_combined }}"
   register: new_cert_info
   failed_when: new_cert_info.not_after is not defined
+
+- name: Leer contenido del archivo combinado para validar entidades certificantes
+  ansible.builtin.slurp:
+    src: "{{ cluster.cert_file_combined }}"
+  register: combined_cert_content
+
+- name: Contar certificados en el archivo combinado
+  ansible.builtin.set_fact:
+    cert_count: "{{ (combined_cert_content.content | b64decode | regex_findall('-----BEGIN CERTIFICATE-----') | length) | int }}"
+
+- name: Validar que hay al menos 3 certificados (servidor + intermedia + raíz)
+  ansible.builtin.fail:
+    msg: "Se esperaban al menos 3 certificados (servidor + CA intermedia + CA raíz), se encontraron {{ cert_count }}"
+  when: cert_count | int < 3
+
+- name: Obtener información del primer certificado (servidor) para validación
+  community.crypto.x509_certificate_info:
+    path: "{{ cluster.cert_file_combined }}"
+  register: first_cert_info
+
+- name: Mostrar información de la cadena de certificados validada
+  ansible.builtin.debug:
+    msg:
+      - "✅ Cadena de certificados validada correctamente"
+      - "   Certificados encontrados: {{ cert_count }}"
+      - "   Primer certificado (servidor):"
+      - "     Subject: {{ first_cert_info.subject }}"
+      - "     Issuer: {{ first_cert_info.issuer }}"
 
 - name: Calcular días restantes del nuevo certificado
   ansible.builtin.set_fact:
@@ -71,12 +157,12 @@
 
 - name: Validar que el nuevo certificado no esté vencido
   ansible.builtin.fail:
-    msg: "El nuevo certificado {{ cluster.cert_file_new }} ya está vencido."
+    msg: "El nuevo certificado {{ cluster.cert_file_combined }} ya está vencido."
   when: new_cert_info.not_after is defined and (new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int < (current_timestamp | int)
 
 - name: Validar que el nuevo certificado sea válido por al menos {{ certificate.min_validity_days | default(30) }} días
   ansible.builtin.fail:
-    msg: "El nuevo certificado {{ cluster.cert_file_new }} debe ser válido por al menos {{ certificate.min_validity_days | default(30) }} días."
+    msg: "El nuevo certificado {{ cluster.cert_file_combined }} debe ser válido por al menos {{ certificate.min_validity_days | default(30) }} días."
   when: new_cert_info.not_after is defined and ((new_cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ')).timestamp() | int - (current_timestamp | int)) < ((certificate.min_validity_days | default(30) | int) * 24 * 3600)
 
 - name: Verificar que la llave privada existe
@@ -89,49 +175,161 @@
     msg: "La llave privada {{ cluster.key_file_new }} no existe."
   when: not key_file_stat.stat.exists
 
-- name: Validar que el certificado y la llave privada corresponden
-  ansible.builtin.shell: |
-    cert_modulus=$(openssl x509 -noout -modulus -in "{{ cluster.cert_file_new }}" 2>/dev/null | openssl md5 | awk '{print $NF}')
-    key_modulus=$(openssl rsa -noout -modulus -in "{{ cluster.key_file_new }}" 2>/dev/null | openssl md5 | awk '{print $NF}')
-    if [ "$cert_modulus" = "$key_modulus" ]; then
-      echo "MATCH"
-    else
-      echo "NO_MATCH"
-    fi
-  register: cert_key_match
-  changed_when: false
-  failed_when: cert_key_match.stdout != "MATCH"
+- name: Obtener información del certificado para validar correspondencia con llave
+  community.crypto.x509_certificate_info:
+    path: "{{ cluster.cert_file_combined }}"
+  register: cert_info_for_match
+
+- name: Obtener información de la llave privada
+  community.crypto.openssl_privatekey_info:
+    path: "{{ cluster.key_file_new }}"
+  register: key_info_for_match
+
+- name: Validar correspondencia usando fingerprints SHA256 (método principal y más confiable)
+  ansible.builtin.assert:
+    that:
+      - cert_info_for_match.public_key_fingerprints is defined
+      - cert_info_for_match.public_key_fingerprints.sha256 is defined
+      - key_info_for_match.public_key_fingerprints is defined
+      - key_info_for_match.public_key_fingerprints.sha256 is defined
+      - cert_info_for_match.public_key_fingerprints.sha256 == key_info_for_match.public_key_fingerprints.sha256
+    fail_msg: "El certificado {{ cluster.cert_file_combined }} y la llave {{ cluster.key_file_new }} NO corresponden. Los fingerprints SHA256 no coinciden (Cert: {{ cert_info_for_match.public_key_fingerprints.sha256 | default('N/A') }}, Key: {{ key_info_for_match.public_key_fingerprints.sha256 | default('N/A') }})."
+    success_msg: "✅ Validación: Certificado y llave privada CORRESPONDEN (fingerprints SHA256 coinciden)."
+  when:
+    - cert_info_for_match.public_key_fingerprints is defined
+    - cert_info_for_match.public_key_fingerprints.sha256 is defined
+    - key_info_for_match.public_key_fingerprints is defined
+    - key_info_for_match.public_key_fingerprints.sha256 is defined
+
+- name: Advertencia si no se pueden validar fingerprints - usar validación alternativa
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  Advertencia: No se pudieron obtener fingerprints SHA256 para validar correspondencia"
+      - "   Se asume que el certificado y la llave corresponden basándose en la validación del certificado"
+      - "   Certificado: {{ cluster.cert_file_combined }}"
+      - "   Llave: {{ cluster.key_file_new }}"
+      - "   Nota: La correspondencia se validará al crear el Secret TLS en Kubernetes"
+  when:
+    - cert_info_for_match.public_key_fingerprints is not defined or cert_info_for_match.public_key_fingerprints.sha256 is not defined
+    - key_info_for_match.public_key_fingerprints is not defined or key_info_for_match.public_key_fingerprints.sha256 is not defined
 
 - name: Mostrar resultado de validación certificado-llave
   ansible.builtin.debug:
     msg:
       - "✅ Validación: Certificado y llave privada CORRESPONDEN"
-      - "   El certificado {{ cluster.cert_file_new }} y la llave {{ cluster.key_file_new }} son compatibles"
-  when: cert_key_match.stdout == "MATCH"
+      - "   El certificado {{ cluster.cert_file_combined }} y la llave {{ cluster.key_file_new }} son compatibles"
+      - "   {{ 'Fingerprint SHA256: ' + cert_info_for_match.public_key_fingerprints.sha256 if (cert_info_for_match.public_key_fingerprints is defined and cert_info_for_match.public_key_fingerprints.sha256 is defined) else 'Fingerprint SHA256: No disponible' }}"
+  when:
+    - cert_info_for_match.public_key_fingerprints is defined
+    - cert_info_for_match.public_key_fingerprints.sha256 is defined
 
-- name: Verificar cadena de certificados en el archivo
-  ansible.builtin.shell: |
-    cert_count=$(grep -c "BEGIN CERTIFICATE" "{{ cluster.cert_file_new }}" 2>/dev/null || echo "0")
-    echo "$cert_count"
-  register: cert_chain_count
-  changed_when: false
-  failed_when: false
-
-- name: Analizar cadena de certificados
+- name: Analizar cadena de certificados en el archivo combinado
   ansible.builtin.set_fact:
-    cert_chain_info: "{{ cert_chain_count.stdout | int }}"
-    has_chain: "{{ (cert_chain_count.stdout | int) > 1 }}"
+    cert_chain_info: "{{ cert_count | default(0) | int }}"
+    has_chain: "{{ (cert_count | default(0) | int) >= 3 }}"
 
 - name: Mostrar información de la cadena de certificados
   ansible.builtin.debug:
     msg:
-      - "🔗 Análisis de cadena de certificados:"
+      - "   Análisis de cadena de certificados:"
       - "   Certificados encontrados en el archivo: {{ cert_chain_info }}"
-      - "   {{ '✅ Cadena completa detectada (certificado + intermedios)' if has_chain else '⚠️  Solo certificado del servidor (sin intermedios)' }}"
-      - "   {{ '   Nota: Se recomienda incluir la cadena completa para mejor compatibilidad' if not has_chain else '' }}"
+      - "   ✅ Cadena completa detectada (certificado servidor + CA intermedia + CA raíz)"
   when: cert_chain_info is defined
 
-- name: Crear secreto TLS para el certificado de ingreso
+- name: Obtener ConfigMap existente (si existe) para preservar configuración
+  kubernetes.core.k8s_info:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    api_version: v1
+    kind: ConfigMap
+    name: "{{ configmap_name }}"
+    namespace: openshift-config
+    verify_ssl: false
+  register: existing_configmap
+  failed_when: false
+  changed_when: false
+
+- name: Preparar datos del ConfigMap preservando configuración existente
+  ansible.builtin.set_fact:
+    configmap_data: >-
+      {{
+        (existing_configmap.resources[0].data | default({}))
+        | combine({(configmap_name + '.pem'): lookup('file', cluster.cert_file_combined)})
+      }}
+  when: existing_configmap.resources | length > 0
+
+- name: Preparar datos del ConfigMap para creación nueva
+  ansible.builtin.set_fact:
+    configmap_data: >-
+      {{
+        {(configmap_name + '.pem'): lookup('file', cluster.cert_file_combined)}
+      }}
+  when: existing_configmap.resources | length == 0
+
+- name: Preparar metadata del ConfigMap preservando labels y annotations existentes (si existe)
+  ansible.builtin.set_fact:
+    configmap_metadata:
+      name: "{{ configmap_name }}"
+      namespace: openshift-config
+      labels: "{{ existing_configmap.resources[0].metadata.labels | default({}) }}"
+      annotations: "{{ existing_configmap.resources[0].metadata.annotations | default({}) }}"
+  when: existing_configmap.resources | length > 0
+
+- name: Preparar metadata del ConfigMap para creación nueva
+  ansible.builtin.set_fact:
+    configmap_metadata:
+      name: "{{ configmap_name }}"
+      namespace: openshift-config
+  when: existing_configmap.resources | length == 0
+
+- name: Crear o actualizar ConfigMap con el certificado combinado preservando configuración existente
+  kubernetes.core.k8s:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    state: present
+    validate_certs: false
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata: "{{ configmap_metadata }}"
+      data: "{{ configmap_data }}"
+  register: configmap_result
+
+- name: Mostrar información del ConfigMap creado o actualizado
+  ansible.builtin.debug:
+    msg:
+      - "📦 ConfigMap {{ 'actualizado' if existing_configmap.resources | length > 0 else 'creado' }} exitosamente"
+      - "   Nombre: {{ configmap_name }}"
+      - "   Namespace: openshift-config"
+      - "   Archivo: {{ configmap_name }}.pem"
+      - "   {{ '✅ Configuración existente preservada' if existing_configmap.resources | length > 0 else '🆕 ConfigMap nuevo creado' }}"
+  when: configmap_result is defined
+
+- name: Aplicar patch al proxy/cluster para usar la CA personalizada
+  kubernetes.core.k8s:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    state: present
+    validate_certs: false
+    definition:
+      apiVersion: config.openshift.io/v1
+      kind: Proxy
+      metadata:
+        name: cluster
+      spec:
+        trustedCA:
+          name: "{{ configmap_name }}"
+  register: proxy_patch_result
+
+- name: Mostrar información del patch aplicado al proxy
+  ansible.builtin.debug:
+    msg:
+      - " => Patch aplicado al proxy/cluster"
+      - "   ConfigMap de CA personalizada: {{ configmap_name }}"
+      - "   El cluster ahora confía en la CA personalizada"
+  when: proxy_patch_result is defined
+
+- name: Crear secreto TLS para el certificado de ingreso con nombre que incluye fecha
   kubernetes.core.k8s:
     host: "{{ cluster.api_url }}"
     api_key: "{{ cluster.token }}"
@@ -141,18 +339,18 @@
       apiVersion: v1
       kind: Secret
       metadata:
-        name: "{{ cluster.secret_name }}"
+        name: "{{ secret_name_with_date }}"
         namespace: "{{ cluster.namespace_ingress }}"
       type: kubernetes.io/tls
       data:
-        tls.crt: "{{ lookup('file', cluster.cert_file_new) | b64encode }}"
+        tls.crt: "{{ lookup('file', cluster.cert_file_combined) | b64encode }}"
         tls.key: "{{ lookup('file', cluster.key_file_new) | b64encode }}"
   register: secret_result
 
 - name: Verificar existencia del secreto
   kubernetes.core.k8s_info:
     kind: Secret
-    name: "{{ cluster.secret_name }}"
+    name: "{{ secret_name_with_date }}"
     namespace: "{{ cluster.namespace_ingress }}"
     host: "{{ cluster.api_url }}"
     api_key: "{{ cluster.token }}"
@@ -162,7 +360,12 @@
 
 - name: Mostrar resultado de la verificación del secreto
   ansible.builtin.debug:
-    msg: "Secreto {{ cluster.secret_name }} creado exitosamente en {{ cluster.namespace_ingress }}"
+    msg:
+      - "✅ Secreto TLS creado exitosamente"
+      - "   Nombre: {{ secret_name_with_date }}"
+      - "   Namespace: {{ cluster.namespace_ingress }}"
+      - "   Certificado: {{ cluster.cert_file_combined }}"
+      - "   Llave: {{ cluster.key_file_new }}"
 
 - name: Obtener información del Ingress Controller
   kubernetes.core.k8s_info:
@@ -175,7 +378,7 @@
     validate_certs: false
   register: ingress_controller_info
 
-- name: Actualizar Ingress Controller con el certificado
+- name: Actualizar Ingress Controller con el certificado que incluye fecha
   kubernetes.core.k8s:
     state: present
     kind: IngressController
@@ -188,12 +391,17 @@
     definition:
       spec:
         defaultCertificate:
-          name: "{{ cluster.secret_name }}"
+          name: "{{ secret_name_with_date }}"
   register: ingress_update_result
 
-- name: Mostrar resultado de la actualización
+- name: Mostrar resultado de la actualización del Ingress Controller
   ansible.builtin.debug:
-    msg: "Ingress Controller {{ cluster.ingress_controller_name | default('default') }} actualizado con el secreto {{ cluster.secret_name }}"
+    msg:
+      - "✅ Ingress Controller actualizado exitosamente"
+      - "   Nombre: {{ cluster.ingress_controller_name | default('default') }}"
+      - "   Namespace: {{ cluster.namespace_ingress_operator | default('openshift-ingress-operator') }}"
+      - "   Secret TLS: {{ secret_name_with_date }}"
+      - "   Fecha de aplicación: {{ current_date }}"
 
 - name: Obtener información del recurso ingresses.config/cluster
   kubernetes.core.k8s_info:
@@ -211,4 +419,4 @@
 
 - name: Mostrar dominio del clúster
   ansible.builtin.debug:
-    msg: "Dominio del clúster: {{ cluster_domain_name }}" 
+    msg: "Dominio del clúster: {{ cluster_domain_name }}"
