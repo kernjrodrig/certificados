@@ -53,7 +53,7 @@
 
 - name: Definir nombres de recursos con fecha
   ansible.builtin.set_fact:
-    configmap_name: "{{ cluster.configmap_name_prefix | default('custom-ca') }}-{{ current_date }}"
+    configmap_name: "{{ cluster.configmap_name_prefix | default('custom-ca') }}"
     secret_name_with_date: "{{ cluster.secret_name_prefix | default('router-certs') }}-{{ current_date }}"
 
 - name: Verificar existencia de archivos de certificados
@@ -254,7 +254,7 @@
     configmap_data: >-
       {{
         (existing_configmap.resources[0].data | default({}))
-        | combine({(configmap_name + '.pem'): lookup('file', cluster.cert_file_combined)})
+        | combine({'ca-bundle.crt': lookup('file', cluster.cert_file_combined)})
       }}
   when: existing_configmap.resources | length > 0
 
@@ -262,7 +262,7 @@
   ansible.builtin.set_fact:
     configmap_data: >-
       {{
-        {(configmap_name + '.pem'): lookup('file', cluster.cert_file_combined)}
+        {'ca-bundle.crt': lookup('file', cluster.cert_file_combined)}
       }}
   when: existing_configmap.resources | length == 0
 
@@ -301,7 +301,7 @@
       - "📦 ConfigMap {{ 'actualizado' if existing_configmap.resources | length > 0 else 'creado' }} exitosamente"
       - "   Nombre: {{ configmap_name }}"
       - "   Namespace: openshift-config"
-      - "   Archivo: {{ configmap_name }}.pem"
+      - "   Archivo: ca-bundle.crt"
       - "   {{ '✅ Configuración existente preservada' if existing_configmap.resources | length > 0 else '🆕 ConfigMap nuevo creado' }}"
   when: configmap_result is defined
 

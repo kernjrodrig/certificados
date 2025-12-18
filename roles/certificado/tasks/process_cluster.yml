@@ -61,4 +61,5 @@
   ansible.builtin.include_tasks: replace_certificate.yml
   vars:
     cluster: "{{ current_cluster }}"
-  when: days_to_expiry is defined and (days_to_expiry | int) < (certificate.replacement_threshold_days | default(60) | int)
+  # ⚠️ FORZAR REEMPLAZO: Comenta la siguiente línea para aplicar el certificado siempre (sin validar días restantes)
+  # when: days_to_expiry is defined and (days_to_expiry | int) < (certificate.replacement_threshold_days | default(60) | int)

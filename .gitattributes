@@ -11,3 +11,4 @@ scripts/*.sh linguist-language=Shell
 # Force repository language detection
 * linguist-detectable=true
 
+
