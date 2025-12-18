@@ -6,7 +6,7 @@ clusters:
     # REQUERIDO: Nombre identificador del cluster (usado para logs y archivos temporales)
     # Este nombre se usa para identificar el cluster en los mensajes y archivos de backup
     
-    api_url: "https://api.cluster-qbfmq.dynamic.redhatworkshops.io:6443/"
+    api_url: "sha256~oYrfBH_W8tbU43EVxZUKYDmbDbUX3xMBcRGx4IWsBgY"
     # REQUERIDO: URL completa de la API del cluster de OpenShift
     # Formato: https://api.<cluster-domain>:6443
     # Nota: Evita la barra final (/) al final de la URL
@@ -94,6 +94,15 @@ clusters:
     # OPCIONAL: Nombre del IngressController a actualizar
     # Valor por defecto: "default"
     # Cambia esto solo si tienes múltiples IngressControllers y quieres actualizar uno específico
+
+# ============================================================================
+# CONFIGURACIÓN DE CERTIFICADOS
+# ============================================================================
+certificate:
+  # Días antes de la expiración para reemplazar automáticamente el certificado
+  # Si el certificado expira en menos de este número de días, se ejecutará el reemplazo
+  replacement_threshold_days: 60
+  # Valor recomendado: 60 días (permite tiempo suficiente para renovación antes de expiración)
 
   # ============================================================================
   # EJEMPLOS ADICIONALES DE CONFIGURACIÓN (descomenta y ajusta según necesites)
