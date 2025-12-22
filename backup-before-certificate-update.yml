@@ -1,0 +1,42 @@
+---
+# Playbook para hacer backup de recursos antes de actualizar certificados
+# Ejecutar ANTES de playbook-with-role.yml para tener respaldos completos
+# Uso: ansible-navigator run backup-before-certificate-update.yml -m stdout
+
+- name: Backup de recursos antes de actualizar certificados
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  vars:
+    role_path: "{{ playbook_dir }}/roles/certificado"
+    backup_dir: "{{ playbook_dir }}/backups"
+  pre_tasks:
+    - name: Cargar variables desde vars.yml
+      ansible.builtin.include_vars:
+        file: vars.yml
+
+    - name: Crear directorio de backups si no existe
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0700'
+
+    - name: Obtener fecha y hora actual para nombres de backup
+      ansible.builtin.set_fact:
+        backup_timestamp: "{{ ansible_date_time.date | replace('-', '') }}-{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+      when: ansible_date_time is defined
+
+    - name: Obtener fecha y hora actual (fallback)
+      ansible.builtin.set_fact:
+        backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      when: ansible_date_time is not defined
+
+  tasks:
+    - name: Procesar cada cluster para hacer backup
+      ansible.builtin.include_tasks: backup-cluster-resources.yml
+      loop: "{{ clusters | default([]) }}"
+      loop_control:
+        loop_var: current_cluster
+        label: "{{ current_cluster.name | default('unknown') }}"
+

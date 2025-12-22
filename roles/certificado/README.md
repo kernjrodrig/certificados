@@ -130,15 +130,15 @@ cp -r certificado /path/to/ansible/roles/
             api_url: "https://api-east.example.com:6443"
             token: "{{ vault_east_token }}"
             secret_name: "east-ingress-cert"
-            cert_file_new: "{{ playbook_dir }}/certs/east-cert.pem"
-            key_file_new: "{{ playbook_dir }}/certs/east-key.pem"
+            cert_file_new: "{{ role_path }}/files/east-cert.pem"
+            key_file_new: "{{ role_path }}/files/east-key.pem"
           
           - name: cluster-west
             api_url: "https://api-west.example.com:6443"
             token: "{{ vault_west_token }}"
             secret_name: "west-ingress-cert"
-            cert_file_new: "{{ playbook_dir }}/certs/west-cert.pem"
-            key_file_new: "{{ playbook_dir }}/certs/west-key.pem"
+            cert_file_new: "{{ role_path }}/files/west-cert.pem"
+            key_file_new: "{{ role_path }}/files/west-key.pem"
 ```
 
 ## Estructura del Rol

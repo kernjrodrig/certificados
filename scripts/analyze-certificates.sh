@@ -1,7 +1,7 @@
 #!/bin/bash
-# Script para analizar certificados en el directorio certs
+# Script para analizar certificados en el directorio roles/certificado/files
 
-CERTS_DIR="$(dirname "$0")/certs"
+CERTS_DIR="$(dirname "$0")/../roles/certificado/files"
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "🔍 ANÁLISIS DE CERTIFICADOS"

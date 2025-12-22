@@ -1,6 +1,6 @@
 # Guía: Qué Certificados Agregar en vars.yml
 
-## Certificados Disponibles en `certs/`
+## Certificados Disponibles en `roles/certificado/files/`
 
 Basado en el análisis, tienes los siguientes archivos:
 
@@ -34,9 +34,9 @@ clusters:
     secret_name: "router-certs-default"  # o el nombre que uses
     namespace_ingress: "openshift-ingress"
     cert_file: "/tmp/uatocp-ingress-cert.pem"
-    # Rutas a los certificados en el directorio certs/
-    cert_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx.crt"
-    key_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx_sinpassw.key"
+    # Rutas a los certificados en el directorio roles/certificado/files/
+    cert_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx.crt"
+    key_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx_sinpassw.key"
     backup_file: "/tmp/ingress-backup-uatocp.yaml"
     namespace_ingress_operator: openshift-ingress-operator
     ingress_controller_name: default
@@ -48,7 +48,7 @@ Si quieres incluir la cadena completa (certificado + intermedios), primero neces
 
 ```bash
 # Crear certificado con cadena completa
-cat certs/apps_uatocp_imss_gob_mx.crt certs/CA_Raiz.crt > certs/apps_uatocp_imss_gob_mx-chain.crt
+cat roles/certificado/files/apps_uatocp_imss_gob_mx.crt roles/certificado/files/CA_Raiz.crt > roles/certificado/files/apps_uatocp_imss_gob_mx-chain.crt
 ```
 
 Luego en vars.yml:
@@ -62,8 +62,8 @@ clusters:
     namespace_ingress: "openshift-ingress"
     cert_file: "/tmp/uatocp-ingress-cert.pem"
     # Usar certificado con cadena completa
-    cert_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx-chain.crt"
-    key_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx_sinpassw.key"
+    cert_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx-chain.crt"
+    key_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx_sinpassw.key"
     backup_file: "/tmp/ingress-backup-uatocp.yaml"
     namespace_ingress_operator: openshift-ingress-operator
     ingress_controller_name: default
@@ -81,7 +81,7 @@ clusters:
 
 ## Notas Importantes
 
-1. **Rutas**: Usa `{{ playbook_dir }}` para rutas relativas al directorio del playbook
+1. **Rutas**: Usa `{{ role_path }}/files/` para rutas relativas al directorio files/ del role (recomendado)
 2. **Seguridad**: Los certificados están en `.gitignore`, no se subirán al repo
 3. **Validaciones**: El rol ahora valida automáticamente:
    - Que el certificado y la llave correspondan
@@ -100,8 +100,8 @@ clusters:
     secret_name: "router-certs-default"
     namespace_ingress: "openshift-ingress"
     cert_file: "/tmp/uatocp-ingress-cert.pem"
-    cert_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx.crt"
-    key_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx_sinpassw.key"
+    cert_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx.crt"
+    key_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx_sinpassw.key"
     backup_file: "/tmp/ingress-backup-uatocp.yaml"
     namespace_ingress_operator: openshift-ingress-operator
     ingress_controller_name: default

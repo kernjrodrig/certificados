@@ -9,7 +9,7 @@ clusters: []
 # Configuración de certificados específica del entorno
 certificate:
   # Directorio donde se almacenan los nuevos certificados
-  source_directory: "{{ playbook_dir }}/certs"
+  source_directory: "{{ role_path }}/files"
   
   # Extensión de archivos de certificados
   cert_extension: ".pem"

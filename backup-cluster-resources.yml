@@ -1,0 +1,280 @@
+---
+# Tareas para hacer backup de recursos de un cluster específico
+# Este archivo se incluye desde backup-before-certificate-update.yml
+
+- name: Mostrar información del cluster a respaldar
+  ansible.builtin.debug:
+    msg:
+      - "📦 Iniciando backup de recursos para cluster: {{ current_cluster.name }}"
+      - "   API URL: {{ current_cluster.api_url }}"
+
+- name: Obtener información del Proxy/cluster completo
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    api_version: config.openshift.io/v1
+    kind: Proxy
+    name: cluster
+    verify_ssl: false
+  register: proxy_backup
+  failed_when: false
+  changed_when: false
+
+- name: Debug - Mostrar resultado de obtención del Proxy
+  ansible.builtin.debug:
+    msg:
+      - "🔍 Resultado de obtención del Proxy:"
+      - "   resources definido: {{ proxy_backup.resources is defined }}"
+      - "   cantidad de recursos: {{ proxy_backup.resources | length if proxy_backup.resources is defined else 'N/A' }}"
+      - "   error: {{ proxy_backup.msg | default('Ninguno') }}"
+
+- name: Guardar backup del Proxy/cluster
+  ansible.builtin.copy:
+    content: "{{ proxy_backup.resources[0] | to_nice_yaml }}"
+    dest: "{{ backup_dir }}/{{ current_cluster.name }}-proxy-cluster-{{ backup_timestamp }}.yaml"
+    mode: '0600'
+  when:
+    - proxy_backup.resources is defined
+    - proxy_backup.resources | length > 0
+  register: proxy_backup_result
+
+- name: Mostrar resultado del backup del Proxy
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backup del Proxy/cluster guardado"
+      - "   Archivo: {{ backup_dir }}/{{ current_cluster.name }}-proxy-cluster-{{ backup_timestamp }}.yaml"
+  when: proxy_backup_result is defined and proxy_backup_result.changed
+
+- name: Advertencia si no se pudo obtener el Proxy
+  ansible.builtin.debug:
+    msg: "⚠️  No se pudo obtener el Proxy/cluster para el cluster {{ current_cluster.name }}"
+  when:
+    - (proxy_backup.resources is not defined) or
+      (proxy_backup.resources | length == 0)
+
+- name: Determinar nombre del ConfigMap actual en uso desde Proxy
+  ansible.builtin.set_fact:
+    current_configmap_name: "{{ proxy_backup.resources[0].spec.trustedCA.name | default('N/A') }}"
+  when: 
+    - proxy_backup.resources is defined
+    - proxy_backup.resources | length > 0
+    - proxy_backup.resources[0].spec.trustedCA is defined
+    - proxy_backup.resources[0].spec.trustedCA.name is defined
+
+- name: ConfigMap no configurado en Proxy
+  ansible.builtin.set_fact:
+    current_configmap_name: "N/A"
+  when: 
+    - (proxy_backup.resources is not defined) or
+      (proxy_backup.resources | length == 0) or 
+      (proxy_backup.resources[0].spec.trustedCA is not defined) or
+      (proxy_backup.resources[0].spec.trustedCA.name is not defined)
+
+- name: Listar todos los ConfigMaps en openshift-config
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    api_version: v1
+    kind: ConfigMap
+    namespace: openshift-config
+    verify_ssl: false
+  register: all_configmaps
+  failed_when: false
+  changed_when: false
+
+- name: Debug - Mostrar todos los ConfigMaps encontrados
+  ansible.builtin.debug:
+    msg:
+      - "🔍 ConfigMaps encontrados en openshift-config:"
+      - "   Total: {{ all_configmaps.resources | length if (all_configmaps.resources is defined) else 0 }}"
+      - "   Nombres: {{ all_configmaps.resources | map(attribute='metadata.name') | list if (all_configmaps.resources is defined) else [] }}"
+  when: all_configmaps.resources is defined
+
+- name: Filtrar ConfigMaps relacionados con certificados (ca-bundle, custom-ca)
+  ansible.builtin.set_fact:
+    certificate_configmaps: "{{ certificate_configmaps | default([]) + [item] }}"
+  loop: "{{ all_configmaps.resources | default([]) }}"
+  when:
+    - all_configmaps.resources is defined
+    - all_configmaps.resources | length > 0
+    - item.metadata.name is defined
+    - (item.metadata.name is match('^ca-bundle.*')) or (item.metadata.name is match('^custom-ca.*'))
+  loop_control:
+    label: "{{ item.metadata.name | default('unknown') }}"
+
+- name: Inicializar lista vacía si no hay ConfigMaps
+  ansible.builtin.set_fact:
+    certificate_configmaps: []
+  when:
+    - all_configmaps.resources is not defined or
+      all_configmaps.resources | length == 0
+
+- name: Obtener ConfigMap actual referenciado en Proxy (si existe)
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    api_version: v1
+    kind: ConfigMap
+    name: "{{ current_configmap_name }}"
+    namespace: openshift-config
+    verify_ssl: false
+  register: configmap_backup
+  failed_when: false
+  changed_when: false
+  when: current_configmap_name != "N/A"
+
+- name: Guardar backup del ConfigMap referenciado en Proxy
+  ansible.builtin.copy:
+    content: "{{ configmap_backup.resources[0] | to_nice_yaml }}"
+    dest: "{{ backup_dir }}/{{ current_cluster.name }}-configmap-{{ current_configmap_name }}-{{ backup_timestamp }}.yaml"
+    mode: '0600'
+  when:
+    - current_configmap_name != "N/A"
+    - configmap_backup.resources is defined
+    - configmap_backup.resources | length > 0
+  register: configmap_backup_result
+
+- name: Guardar backup de todos los ConfigMaps relacionados con certificados
+  ansible.builtin.copy:
+    content: "{{ item | to_nice_yaml }}"
+    dest: "{{ backup_dir }}/{{ current_cluster.name }}-configmap-{{ item.metadata.name }}-{{ backup_timestamp }}.yaml"
+    mode: '0600'
+  loop: "{{ certificate_configmaps | default([]) }}"
+  when:
+    - certificate_configmaps is defined
+    - certificate_configmaps | length > 0
+  register: all_configmaps_backup_result
+  loop_control:
+    label: "ConfigMap {{ item.metadata.name }}"
+
+- name: Mostrar resultado del backup del ConfigMap referenciado
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backup del ConfigMap referenciado en Proxy guardado"
+      - "   Nombre: {{ current_configmap_name }}"
+      - "   Archivo: {{ backup_dir }}/{{ current_cluster.name }}-configmap-{{ current_configmap_name }}-{{ backup_timestamp }}.yaml"
+  when: 
+    - current_configmap_name != "N/A"
+    - configmap_backup_result is defined
+    - configmap_backup_result.changed
+
+- name: Mostrar resultado del backup de todos los ConfigMaps
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backups de ConfigMaps relacionados con certificados guardados"
+      - "   Total: {{ certificate_configmaps | length if certificate_configmaps is defined else 0 }}"
+      - "   Archivos en: {{ backup_dir }}"
+  when:
+    - certificate_configmaps is defined
+    - certificate_configmaps | length > 0
+
+- name: Advertencia si no hay ConfigMaps relacionados con certificados
+  ansible.builtin.debug:
+    msg: "⚠️  No se encontraron ConfigMaps relacionados con certificados (ca-bundle, custom-ca) en openshift-config para el cluster {{ current_cluster.name }}"
+  when:
+    - certificate_configmaps is not defined or
+      certificate_configmaps | length == 0
+
+- name: Obtener información del IngressController para identificar Secret en uso
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    kind: IngressController
+    api_version: operator.openshift.io/v1
+    name: "{{ current_cluster.ingress_controller_name | default('default') }}"
+    namespace: "{{ current_cluster.namespace_ingress_operator | default('openshift-ingress-operator') }}"
+    verify_ssl: false
+  register: ingress_controller_backup
+  failed_when: false
+  changed_when: false
+
+- name: Determinar nombre del Secret actual en uso
+  ansible.builtin.set_fact:
+    current_secret_name: "{{ ingress_controller_backup.resources[0].spec.defaultCertificate.name | default('N/A') }}"
+  when:
+    - ingress_controller_backup.resources is defined
+    - ingress_controller_backup.resources | length > 0
+    - ingress_controller_backup.resources[0].spec.defaultCertificate is defined
+    - ingress_controller_backup.resources[0].spec.defaultCertificate.name is defined
+
+- name: Secret no configurado en IngressController
+  ansible.builtin.set_fact:
+    current_secret_name: "N/A"
+  when:
+    - (ingress_controller_backup.resources is not defined) or
+      (ingress_controller_backup.resources | length == 0) or
+      (ingress_controller_backup.resources[0].spec.defaultCertificate is not defined) or
+      (ingress_controller_backup.resources[0].spec.defaultCertificate.name is not defined)
+
+- name: Guardar backup completo del IngressController
+  ansible.builtin.copy:
+    content: "{{ ingress_controller_backup.resources[0] | to_nice_yaml }}"
+    dest: "{{ backup_dir }}/{{ current_cluster.name }}-ingresscontroller-{{ current_cluster.ingress_controller_name | default('default') }}-{{ backup_timestamp }}.yaml"
+    mode: '0600'
+  when:
+    - ingress_controller_backup.resources is defined
+    - ingress_controller_backup.resources | length > 0
+  register: ingress_controller_backup_result
+
+- name: Mostrar resultado del backup del IngressController
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backup del IngressController guardado"
+      - "   Nombre: {{ current_cluster.ingress_controller_name | default('default') }}"
+      - "   Secret en uso: {{ current_secret_name }}"
+      - "   Archivo: {{ backup_dir }}/{{ current_cluster.name }}-ingresscontroller-{{ current_cluster.ingress_controller_name | default('default') }}-{{ backup_timestamp }}.yaml"
+  when: ingress_controller_backup_result is defined and ingress_controller_backup_result.changed
+
+- name: Obtener Secret TLS actual (si existe)
+  kubernetes.core.k8s_info:
+    host: "{{ current_cluster.api_url }}"
+    api_key: "{{ current_cluster.token }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ current_secret_name }}"
+    namespace: "{{ current_cluster.namespace_ingress | default('openshift-ingress') }}"
+    verify_ssl: false
+  register: secret_backup
+  failed_when: false
+  changed_when: false
+  when: current_secret_name != "N/A"
+
+- name: Guardar backup del Secret TLS
+  ansible.builtin.copy:
+    content: "{{ secret_backup.resources[0] | to_nice_yaml }}"
+    dest: "{{ backup_dir }}/{{ current_cluster.name }}-secret-{{ current_secret_name }}-{{ backup_timestamp }}.yaml"
+    mode: '0600'
+  when:
+    - current_secret_name != "N/A"
+    - secret_backup.resources is defined
+    - secret_backup.resources | length > 0
+  register: secret_backup_result
+
+- name: Mostrar resultado del backup del Secret
+  ansible.builtin.debug:
+    msg:
+      - "💾 Backup del Secret TLS guardado"
+      - "   Nombre: {{ current_secret_name }}"
+      - "   Namespace: {{ current_cluster.namespace_ingress | default('openshift-ingress') }}"
+      - "   Archivo: {{ backup_dir }}/{{ current_cluster.name }}-secret-{{ current_secret_name }}-{{ backup_timestamp }}.yaml"
+  when:
+    - current_secret_name != "N/A"
+    - secret_backup_result is defined
+    - secret_backup_result.changed
+
+- name: Advertencia si no hay Secret configurado
+  ansible.builtin.debug:
+    msg: "⚠️  No hay Secret configurado en IngressController para el cluster {{ current_cluster.name }}"
+  when: current_secret_name == "N/A"
+
+- name: Resumen de backups realizados para {{ current_cluster.name }}
+  ansible.builtin.debug:
+    msg:
+      - "✅ Backup completado para cluster: {{ current_cluster.name }}"
+      - "   🔧 Proxy/cluster: {{ 'Sí' if (proxy_backup_result is defined and proxy_backup_result.changed) else 'No disponible' }}"
+      - "   📦 ConfigMap referenciado: {{ current_configmap_name if current_configmap_name != 'N/A' else 'No configurado' }}"
+      - "   📦 ConfigMaps relacionados: {{ certificate_configmaps | length if certificate_configmaps is defined else 0 }}"
+      - "   🔐 Secret: {{ 'Sí' if (current_secret_name != 'N/A' and secret_backup_result is defined and secret_backup_result.changed) else 'No disponible' }}"
+      - "   🌐 IngressController: {{ 'Sí' if (ingress_controller_backup_result is defined and ingress_controller_backup_result.changed) else 'No disponible' }}"
+      - "   📁 Directorio: {{ backup_dir }}"
+

@@ -24,8 +24,8 @@ clusters:
     token: "{{ vault_prod_token }}"  # usa Ansible Vault
     secret_name: "ingress-tls-secret"
     namespace_ingress: "openshift-ingress"
-    cert_file_new: "{{ playbook_dir }}/certs/prod-cert.pem"  # fuera del repo
-    key_file_new: "{{ playbook_dir }}/certs/prod-key.pem"    # fuera del repo
+    cert_file_new: "{{ role_path }}/files/prod-cert.pem"  # en roles/certificado/files/
+    key_file_new: "{{ role_path }}/files/prod-key.pem"    # en roles/certificado/files/
 ```
 
 2) Ejecuta el playbook del rol:
@@ -65,7 +65,7 @@ El rol:
 
 ## Buenas prácticas y seguridad
 
-- No incluyas certificados ni llaves en el repositorio. Ubícalos fuera del repo (por ejemplo, `{{ playbook_dir }}/certs/…`) y referencia sus rutas en `vars.yml`.
+- No incluyas certificados ni llaves en el repositorio. Ubícalos en `roles/certificado/files/` (por ejemplo, `{{ role_path }}/files/…`) y referencia sus rutas en `vars.yml`.
 - Protege tokens y secretos con Ansible Vault.
 
 ## Archivos útiles
@@ -112,8 +112,8 @@ clusters:
     token: "{{ vault_prod_token }}"   # definido en tu vault o como var sensible
     secret_name: "ingress-tls-secret"
     namespace_ingress: "openshift-ingress"
-    cert_file_new: "/runner/project/certs/prod-cert.pem"
-    key_file_new: "/runner/project/certs/prod-key.pem"
+    cert_file_new: "/runner/project/roles/certificado/files/prod-cert.pem"
+    key_file_new: "/runner/project/roles/certificado/files/prod-key.pem"
 ```
 
 Notas:

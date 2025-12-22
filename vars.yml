@@ -3,96 +3,44 @@
 # Puedes definir múltiples clusters en esta lista
 clusters:
   - name: DR_OCP
-    # REQUERIDO: Nombre identificador del cluster (usado para logs y archivos temporales)
-    # Este nombre se usa para identificar el cluster en los mensajes y archivos de backup
+
+    api_url: "https://api.cluster-mpdsl.dynamic.redhatworkshops.io:6443"
+
+    token: "sha256~tWIBeV__yghZKPxQpfOMm5vyCjOBABBnXK1P1tCqa48"
+
     
-    api_url: "https://api.dr-ocp.imss.gob.mx:6443"
-    # REQUERIDO: URL completa de la API del cluster de OpenShift
-    # Formato: https://api.<cluster-domain>:6443
-    # Nota: Evita la barra final (/) al final de la URL
-    
-    # token: "sha256~xRCmzX4DVpI15r6SSQ31kOoLuu8a_UE41QYCZdht3Jw"
-    token: "sha256~Z2nf3hpyVUxdhtNezW9Vgxc8UsoUTWeecQBpnX6mHaA"
-    # REQUERIDO: Token de autenticación para acceder al cluster
-    # Formato: sha256~<token>
-    # ⚠️ SEGURIDAD: Usa Ansible Vault para proteger este token:
-    #   token: "{{ vault_cluster1_token }}"
-    #   Luego: ansible-vault encrypt_string 'sha256~TOKEN' --name vault_cluster1_token
-    
-    secret_name: "router-certs-dr-ocp"
-    # REQUERIDO: Nombre del secreto TLS de Kubernetes que contiene el certificado
-    # Opciones comunes:
-    #   - "router-certs-default" (secreto por defecto de OpenShift, recomendado)
-    #   - "ingress-tls-secret" (nombre personalizado)
-    # El rol creará o actualizará este secreto en el namespace openshift-ingress
+    secret_name: "cert-manager-ingress-cert"
+
     
     namespace_ingress: "openshift-ingress"
-    # OPCIONAL: Namespace donde se encuentra el secreto TLS
-    # Valor por defecto: "openshift-ingress"
-    # Normalmente no necesitas cambiarlo a menos que uses un namespace personalizado
-    
-    cert_file: "/tmp/cluster1-ingress-cert.pem"
-    # OPCIONAL: Ruta temporal donde se guardará el certificado actual extraído del cluster
-    # El rol usa este archivo para leer el certificado existente y validar su expiración
-    # Se crea automáticamente durante la ejecución
-    
-    # Rutas externas a tus certificados (no incluidas en el repo)
+
+    cert_file: "{{ role_path }}/files/cluster1-ingress-cert.crt"
+
     cert_file_crt: "{{ role_path }}/files/apps_dr-ocp_imss_gob_mx.crt"    # REQUERIDO (para reemplazo): Ruta al archivo del certificado del servidor (.crt)
-    # Variables útiles:
-    #   - {{ playbook_dir }}/certs/certificado.crt (relativo al playbook)
-    #   - {{ role_path }}/files/cert.crt (dentro del rol)
-    #   - /ruta/absoluta/certificado.crt (ruta absoluta)
-    # Formato: Certificado PEM (.crt)
+
     
     ca_intermedia_file: "{{ role_path }}/files/CA_Intermedia.crt"
-    # REQUERIDO (para reemplazo): Ruta al archivo de la CA intermedia
-    # Formato: Certificado PEM (.cer)
-    # Este certificado se unirá con el certificado del servidor y la CA raíz
+
     
     ca_raiz_file: "{{ role_path }}/files/CA_Raiz.crt"
-    # REQUERIDO (para reemplazo): Ruta al archivo de la CA raíz
-    # Formato: Certificado PEM (.crt o .cer)
-    # Este certificado se unirá al final de la cadena de certificados
+
     
     cert_file_combined: "{{ role_path }}/files/cert-combined.crt"
-    # REQUERIDO (para reemplazo): Ruta donde se guardará y usará el certificado combinado (.crt + CA intermedia + CA raíz)
-    # Se crea automáticamente durante la ejecución uniendo los tres certificados
-    # Este será el archivo .pem final que se usará para crear el Secret TLS y ConfigMap
-    # Guardado en el directorio files/ del role para persistencia
+
     
     key_file_new: "{{ role_path }}/files/apps_dr-ocp_imss_gob_mx.key"
-    # REQUERIDO (para reemplazo): Ruta al archivo de la llave privada del certificado
-    # Debe corresponder con el certificado especificado en cert_file_crt
-    # Formato: Llave privada PEM (RSA o ECDSA), preferiblemente sin contraseña
-    # El rol valida automáticamente que el certificado y la llave correspondan
-    
-    configmap_name_prefix: "ca-bundle"
-    # OPCIONAL: Prefijo para el nombre del ConfigMap que contendrá la CA
-    # El nombre final será: {{ configmap_name_prefix }}-{{ fecha_actual }}
-    # Ejemplo: custom-ca-20241225
-    # Valor por defecto: custom-ca
-    
-    secret_name_prefix: "router-certs"
-    # OPCIONAL: Prefijo para el nombre del Secret TLS que contendrá el certificado
-    # El nombre final será: {{ secret_name_prefix }}-{{ fecha_actual }}
-    # Ejemplo: router-certs-20241225
-    # Valor por defecto: router-certs
+
+    configmap_name_prefix: "custom-ca-dr-ocp"
+
+    secret_name_prefix: "router-certs-dr-ocp"
+
     
     backup_file: "{{ role_path }}/files/ingress-backup-cluster1.yaml"
-    # OPCIONAL: Ruta donde se guardará el backup completo del secreto antes del reemplazo
-    # El backup incluye todo el contenido del secreto TLS en formato YAML
-    # Útil para rollback en caso de problemas
-    # Valor por defecto: /tmp/ingress-backup-{{ cluster.name }}.yaml
-    
+
     namespace_ingress_operator: openshift-ingress-operator
-    # OPCIONAL: Namespace donde se encuentra el recurso IngressController
-    # Valor por defecto: "openshift-ingress-operator"
-    # Normalmente no necesitas cambiarlo
-    
+
     ingress_controller_name: default
-    # OPCIONAL: Nombre del IngressController a actualizar
-    # Valor por defecto: "default"
-    # Cambia esto solo si tienes múltiples IngressControllers y quieres actualizar uno específico
+
 
 # ============================================================================
 # CONFIGURACIÓN DE CERTIFICADOS
@@ -103,34 +51,4 @@ certificate:
   replacement_threshold_days: 60
   # Valor recomendado: 60 días (permite tiempo suficiente para renovación antes de expiración)
 
-  # ============================================================================
-  # EJEMPLOS ADICIONALES DE CONFIGURACIÓN (descomenta y ajusta según necesites)
-  # ============================================================================
   
-  # Ejemplo 2: Segundo cluster con configuración personalizada
-  # - name: cluster2
-  #   api_url: "https://api.cluster2.example.com:6443"
-  #   token: "{{ vault_cluster2_token }}"  # ✅ RECOMENDADO: Token protegido con Ansible Vault
-  #   secret_name: "ingress-tls-secret"   # Nombre personalizado del secreto
-  #   namespace_ingress: "openshift-ingress"
-  #   cert_file: "/tmp/cluster2-ingress-cert.pem"
-  #   cert_file_new: "{{ playbook_dir }}/certs/cluster2-cert.pem"  # Certificado en directorio certs/
-  #   key_file_new: "{{ playbook_dir }}/certs/cluster2-key.pem"    # Llave en directorio certs/
-  #   backup_file: "/tmp/ingress-backup-cluster2.yaml"
-  #   namespace_ingress_operator: openshift-ingress-operator
-  #   ingress_controller_name: default
-  #
-  # Para crear el token encriptado con Ansible Vault:
-  #   ansible-vault encrypt_string 'sha256~TU_TOKEN' --name vault_cluster2_token
-  #
-  # Ejemplo 3: Cluster usando certificado con cadena completa
-  # - name: cluster3
-  #   api_url: "https://api.cluster3.example.com:6443"
-  #   token: "{{ vault_cluster3_token }}"
-  #   secret_name: "router-certs-default"
-  #   namespace_ingress: "openshift-ingress"
-  #   cert_file_new: "{{ playbook_dir }}/certs/cluster3-cert-chain.pem"  # Certificado + CA intermedia + CA raíz
-  #   key_file_new: "{{ playbook_dir }}/certs/cluster3-key.pem"
-  #   backup_file: "/tmp/ingress-backup-cluster3.yaml"
-  #   namespace_ingress_operator: openshift-ingress-operator
-  #   ingress_controller_name: default

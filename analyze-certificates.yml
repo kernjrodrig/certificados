@@ -1,11 +1,11 @@
 ---
-# Playbook para analizar certificados en el directorio certs
-- name: Analizar certificados en el directorio certs
+# Playbook para analizar certificados en el directorio roles/certificado/files
+- name: Analizar certificados en el directorio roles/certificado/files
   hosts: localhost
   gather_facts: false
   become: false
   vars:
-    certs_dir: "{{ playbook_dir }}/certs"
+    certs_dir: "{{ playbook_dir }}/roles/certificado/files"
 
   tasks:
     - name: Listar archivos de certificados

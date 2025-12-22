@@ -92,8 +92,8 @@ clusters:
     token: "{{ vault_uatocp_token }}"
     secret_name: "router-certs-default"  # ← Usa el por defecto
     namespace_ingress: "openshift-ingress"
-    cert_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx.crt"
-    key_file_new: "{{ playbook_dir }}/certs/apps_uatocp_imss_gob_mx_sinpassw.key"
+    cert_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx.crt"
+    key_file_new: "{{ role_path }}/files/apps_uatocp_imss_gob_mx_sinpassw.key"
     # ... resto de configuración
 ```
 
