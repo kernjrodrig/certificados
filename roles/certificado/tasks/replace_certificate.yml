@@ -206,22 +206,11 @@
     src: "{{ cluster.cert_file_combined }}"
   register: cert_content_for_configmap
 
-- name: Normalizar contenido del certificado para ConfigMap (eliminar \r\n, usar solo \n)
-  ansible.builtin.set_fact:
-    cert_content_for_configmap_normalized: "{{ cert_content_for_configmap.content | b64decode | replace('\r\n', '\n') | replace('\r', '\n') }}"
+# - name: Preparar contenido del certificado para ConfigMap (decodificar y agregar \r\n al final)
+#   ansible.builtin.set_fact:
+#     cert_content_for_configmap_normalized: "{{ cert_content_for_configmap.content | b64decode ~ '\r\n' }}"
 
-- name: Preparar datos del ConfigMap nuevo con certificado normalizado
-  ansible.builtin.set_fact:
-    configmap_data:
-      ca-bundle.crt: "{{ cert_content_for_configmap_normalized }}"
-
-- name: Preparar metadata del ConfigMap nuevo
-  ansible.builtin.set_fact:
-    configmap_metadata:
-      name: "{{ configmap_name }}"
-      namespace: openshift-config
-
-- name: Crear nuevo ConfigMap con el certificado combinado (siempre crea uno nuevo)
+- name: Crear ConfigMap vacío primero
   kubernetes.core.k8s:
     host: "{{ cluster.api_url }}"
     api_key: "{{ cluster.token }}"
@@ -230,9 +219,28 @@
     definition:
       apiVersion: v1
       kind: ConfigMap
-      metadata: "{{ configmap_metadata }}"
-      data: "{{ configmap_data }}"
+      metadata:
+        name: "{{ configmap_name }}"
+        namespace: openshift-config
+      data: {}
+  register: configmap_created
+
+- name: Insertar certificado en el ConfigMap creado
+  kubernetes.core.k8s:
+    host: "{{ cluster.api_url }}"
+    api_key: "{{ cluster.token }}"
+    state: present
+    validate_certs: false
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ configmap_name }}"
+        namespace: openshift-config
+      data:
+        ca-bundle.crt: "{{ cert_content_for_configmap.content | b64decode }}"
   register: configmap_result
+  when: configmap_created is defined
 
 - name: Mostrar información del ConfigMap creado
   ansible.builtin.debug:
@@ -283,13 +291,13 @@
     src: "{{ cluster.key_file_new }}"
   register: key_content_for_secret
 
-- name: Normalizar contenido del certificado (eliminar saltos de línea y espacios al final)
+- name: Normalizar contenido del certificado y agregar \r\n al final
   ansible.builtin.set_fact:
-    cert_content_normalized: "{{ cert_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}"
+    cert_content_normalized: "{{ cert_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}{{ '\r\n' }}"
 
-- name: Normalizar contenido de la llave (eliminar saltos de línea y espacios al final)
+- name: Normalizar contenido de la llave y agregar \r\n al final
   ansible.builtin.set_fact:
-    key_content_normalized: "{{ key_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}"
+    key_content_normalized: "{{ key_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}{{ '\r\n' }}"
 
 - name: Crear secreto TLS para el certificado de ingreso con nombre que incluye fecha
   kubernetes.core.k8s:

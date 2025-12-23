@@ -1,3 +1,49 @@
 {
-    "ansible.python.interpreterPath": "/home/javo/Documents/certificados/ansible-env/bin/python"
+  // Configuración para reconocer archivos YAML como Ansible
+  "files.associations": {
+    "*.yml": "ansible",
+    "*.yaml": "ansible",
+    "**/roles/**/*.yml": "ansible",
+    "**/tasks/**/*.yml": "ansible",
+    "**/handlers/**/*.yml": "ansible",
+    "**/vars/**/*.yml": "ansible",
+    "**/defaults/**/*.yml": "ansible",
+    "**/meta/**/*.yml": "ansible",
+    "**/playbooks/**/*.yml": "ansible",
+    "playbook*.yml": "ansible",
+    "vars.yml": "ansible",
+    "requirements.yml": "ansible",
+    "ansible-navigator.yml": "ansible",
+    "ansible.cfg": "ini"
+  },
+
+  // Configuración de Ansible
+  "ansible.python.interpreterPath": "{{workspaceFolder}}/ansible-env/bin/python",
+  "ansible.ansible.path": "{{workspaceFolder}}/ansible-env/bin/ansible",
+  "ansible.ansibleLint.enabled": true,
+  "ansible.ansibleLint.path": "{{workspaceFolder}}/ansible-env/bin/ansible-lint",
+
+  // Configuración de YAML
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json": [
+      "**/roles/**/*.yml",
+      "**/tasks/**/*.yml",
+      "**/handlers/**/*.yml",
+      "**/vars/**/*.yml",
+      "**/defaults/**/*.yml",
+      "**/meta/**/*.yml",
+      "playbook*.yml",
+      "vars.yml"
+    ]
+  },
+
+  // Configuración del editor
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+
+  // Configuración de archivos
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
 }
