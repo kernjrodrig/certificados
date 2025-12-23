@@ -2,45 +2,6 @@
 # Tareas para reemplazar certificados de OpenShift
 # Este archivo se incluye cuando un certificado expira en menos de 60 días
 
-- name: Obtener secreto TLS actual para backup antes del reemplazo
-  kubernetes.core.k8s_info:
-    host: "{{ cluster.api_url }}"
-    api_key: "{{ cluster.token }}"
-    api_version: v1
-    kind: Secret
-    name: "{{ cluster.secret_name }}"
-    namespace: "{{ cluster.namespace_ingress }}"
-    verify_ssl: false
-  register: current_secret_backup
-  no_log: false
-
-- name: Crear directorio de backup si no existe
-  ansible.builtin.file:
-    path: "{{ cluster.backup_file | dirname }}"
-    state: directory
-    mode: '0700'
-  when: cluster.backup_file is defined and cluster.backup_file != ""
-
-- name: Guardar backup completo del secreto antes del reemplazo
-  ansible.builtin.copy:
-    content: "{{ current_secret_backup.resources[0] | to_nice_yaml }}"
-    dest: "{{ cluster.backup_file }}"
-    mode: "{{ certificate.backup_file_mode | default('0600') }}"
-  when: 
-    - current_secret_backup.resources | length > 0
-    - cluster.backup_file is defined
-    - cluster.backup_file != ""
-  register: backup_result
-
-- name: Mostrar información del backup realizado
-  ansible.builtin.debug:
-    msg:
-      - "💾 Backup del secreto guardado exitosamente"
-      - "📁 Ubicación: {{ cluster.backup_file }}"
-      - "📋 Secreto: {{ cluster.secret_name }} en namespace {{ cluster.namespace_ingress }}"
-      - "⏰ Backup creado antes del reemplazo del certificado"
-  when: backup_result is defined and backup_result.changed
-
 - name: Obtener fecha actual en formato YYYYMMDD
   ansible.builtin.set_fact:
     current_date: "{{ ansible_date_time.date | replace('-', '') }}"
@@ -53,7 +14,7 @@
 
 - name: Definir nombres de recursos con fecha
   ansible.builtin.set_fact:
-    configmap_name: "{{ cluster.configmap_name_prefix | default('custom-ca') }}"
+    configmap_name: "{{ cluster.configmap_name_prefix | default('custom-ca') }}-{{ current_date }}"
     secret_name_with_date: "{{ cluster.secret_name_prefix | default('router-certs') }}-{{ current_date }}"
 
 - name: Verificar existencia de archivos de certificados
@@ -83,9 +44,13 @@
   loop_control:
     label: "{{ item | basename }}"
 
-- name: Unir certificados (servidor + CA intermedia + CA raíz) en archivo .pem
+- name: Unir certificados (servidor + CA intermedia + CA raíz) y normalizar (sin saltos de línea finales)
+  ansible.builtin.set_fact:
+    combined_cert_content: "{{ cert_contents.results | map(attribute='content') | map('b64decode') | join('') | regex_replace('\\s+$', '') }}"
+
+- name: Crear archivo combinado con certificados normalizados
   ansible.builtin.copy:
-    content: "{{ cert_contents.results | map(attribute='content') | map('b64decode') | join('') }}"
+    content: "{{ combined_cert_content }}"
     dest: "{{ cluster.cert_file_combined }}"
     mode: '0600'
   register: combine_certs_result
@@ -236,53 +201,27 @@
       - "   ✅ Cadena completa detectada (certificado servidor + CA intermedia + CA raíz)"
   when: cert_chain_info is defined
 
-- name: Obtener ConfigMap existente (si existe) para preservar configuración
-  kubernetes.core.k8s_info:
-    host: "{{ cluster.api_url }}"
-    api_key: "{{ cluster.token }}"
-    api_version: v1
-    kind: ConfigMap
-    name: "{{ configmap_name }}"
-    namespace: openshift-config
-    verify_ssl: false
-  register: existing_configmap
-  failed_when: false
-  changed_when: false
+- name: Leer contenido del certificado combinado para el ConfigMap
+  ansible.builtin.slurp:
+    src: "{{ cluster.cert_file_combined }}"
+  register: cert_content_for_configmap
 
-- name: Preparar datos del ConfigMap preservando configuración existente
+- name: Normalizar contenido del certificado para ConfigMap (eliminar \r\n, usar solo \n)
   ansible.builtin.set_fact:
-    configmap_data: >-
-      {{
-        (existing_configmap.resources[0].data | default({}))
-        | combine({'ca-bundle.crt': lookup('file', cluster.cert_file_combined)})
-      }}
-  when: existing_configmap.resources | length > 0
+    cert_content_for_configmap_normalized: "{{ cert_content_for_configmap.content | b64decode | replace('\r\n', '\n') | replace('\r', '\n') }}"
 
-- name: Preparar datos del ConfigMap para creación nueva
+- name: Preparar datos del ConfigMap nuevo con certificado normalizado
   ansible.builtin.set_fact:
-    configmap_data: >-
-      {{
-        {'ca-bundle.crt': lookup('file', cluster.cert_file_combined)}
-      }}
-  when: existing_configmap.resources | length == 0
+    configmap_data:
+      ca-bundle.crt: "{{ cert_content_for_configmap_normalized }}"
 
-- name: Preparar metadata del ConfigMap preservando labels y annotations existentes (si existe)
+- name: Preparar metadata del ConfigMap nuevo
   ansible.builtin.set_fact:
     configmap_metadata:
       name: "{{ configmap_name }}"
       namespace: openshift-config
-      labels: "{{ existing_configmap.resources[0].metadata.labels | default({}) }}"
-      annotations: "{{ existing_configmap.resources[0].metadata.annotations | default({}) }}"
-  when: existing_configmap.resources | length > 0
 
-- name: Preparar metadata del ConfigMap para creación nueva
-  ansible.builtin.set_fact:
-    configmap_metadata:
-      name: "{{ configmap_name }}"
-      namespace: openshift-config
-  when: existing_configmap.resources | length == 0
-
-- name: Crear o actualizar ConfigMap con el certificado combinado preservando configuración existente
+- name: Crear nuevo ConfigMap con el certificado combinado (siempre crea uno nuevo)
   kubernetes.core.k8s:
     host: "{{ cluster.api_url }}"
     api_key: "{{ cluster.token }}"
@@ -295,14 +234,14 @@
       data: "{{ configmap_data }}"
   register: configmap_result
 
-- name: Mostrar información del ConfigMap creado o actualizado
+- name: Mostrar información del ConfigMap creado
   ansible.builtin.debug:
     msg:
-      - "📦 ConfigMap {{ 'actualizado' if existing_configmap.resources | length > 0 else 'creado' }} exitosamente"
+      - "📦 ConfigMap nuevo creado exitosamente"
       - "   Nombre: {{ configmap_name }}"
       - "   Namespace: openshift-config"
       - "   Archivo: ca-bundle.crt"
-      - "   {{ '✅ Configuración existente preservada' if existing_configmap.resources | length > 0 else '🆕 ConfigMap nuevo creado' }}"
+      - "   🆕 ConfigMap nuevo creado (no se actualizó ningún ConfigMap existente)"
   when: configmap_result is defined
 
 - name: Aplicar patch al proxy/cluster para usar la CA personalizada
@@ -329,6 +268,24 @@
       - "   El cluster ahora confía en la CA personalizada"
   when: proxy_patch_result is defined
 
+- name: Leer y normalizar contenido del certificado combinado para el Secret (sin saltos de línea finales)
+  ansible.builtin.slurp:
+    src: "{{ cluster.cert_file_combined }}"
+  register: cert_content_for_secret
+
+- name: Leer y normalizar contenido de la llave privada para el Secret (sin saltos de línea finales)
+  ansible.builtin.slurp:
+    src: "{{ cluster.key_file_new }}"
+  register: key_content_for_secret
+
+- name: Normalizar contenido del certificado (eliminar saltos de línea y espacios al final)
+  ansible.builtin.set_fact:
+    cert_content_normalized: "{{ cert_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}"
+
+- name: Normalizar contenido de la llave (eliminar saltos de línea y espacios al final)
+  ansible.builtin.set_fact:
+    key_content_normalized: "{{ key_content_for_secret.content | b64decode | regex_replace('\\s+$', '') }}"
+
 - name: Crear secreto TLS para el certificado de ingreso con nombre que incluye fecha
   kubernetes.core.k8s:
     host: "{{ cluster.api_url }}"
@@ -343,8 +300,8 @@
         namespace: "{{ cluster.namespace_ingress }}"
       type: kubernetes.io/tls
       data:
-        tls.crt: "{{ lookup('file', cluster.cert_file_combined) | b64encode }}"
-        tls.key: "{{ lookup('file', cluster.key_file_new) | b64encode }}"
+        tls.crt: "{{ cert_content_normalized | b64encode }}"
+        tls.key: "{{ key_content_normalized | b64encode }}"
   register: secret_result
 
 - name: Verificar existencia del secreto

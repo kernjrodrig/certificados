@@ -4,9 +4,9 @@
 clusters:
   - name: DR_OCP
 
-    api_url: "https://api.cluster-mpdsl.dynamic.redhatworkshops.io:6443"
+    api_url: "https://api.cluster-pvvpb.dynamic.redhatworkshops.io:6443"
 
-    token: "sha256~tWIBeV__yghZKPxQpfOMm5vyCjOBABBnXK1P1tCqa48"
+    token: "sha256~jj85ib0NKjWFXAZtvWwoPMFma26ZFh0LQ7i6NnNgras"
 
     
     secret_name: "cert-manager-ingress-cert"
@@ -14,7 +14,8 @@ clusters:
     
     namespace_ingress: "openshift-ingress"
 
-    cert_file: "{{ role_path }}/files/cluster1-ingress-cert.crt"
+    # COMENTADO: Ya no se usa - el certificado se lee directamente del secreto sin guardar en archivo
+    # cert_file: "{{ role_path }}/files/cluster1-ingress-cert.crt"
 
     cert_file_crt: "{{ role_path }}/files/apps_dr-ocp_imss_gob_mx.crt"    # REQUERIDO (para reemplazo): Ruta al archivo del certificado del servidor (.crt)
 
@@ -34,8 +35,8 @@ clusters:
 
     secret_name_prefix: "router-certs-dr-ocp"
 
-    
-    backup_file: "{{ role_path }}/files/ingress-backup-cluster1.yaml"
+    # COMENTADO: Ya no se usa - el proceso de backup fue eliminado del role
+    # backup_file: "{{ role_path }}/files/ingress-backup-cluster1.yaml"
 
     namespace_ingress_operator: openshift-ingress-operator
 

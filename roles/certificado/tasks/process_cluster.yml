@@ -19,18 +19,12 @@
     msg: "El secreto {{ current_cluster.secret_name }} no existe en el namespace {{ current_cluster.namespace_ingress }} del cluster {{ current_cluster.name }}"
   when: secret_data.resources | length == 0
 
-- name: Extraer y guardar certificado en un archivo temporal para el cluster {{ current_cluster.name }}
-  ansible.builtin.copy:
-    content: "{{ secret_data.resources[0].data['tls.crt'] | b64decode }}"
-    dest: "{{ current_cluster.cert_file }}"
-    mode: '0600'
-  when: secret_data.resources | length > 0
-
-- name: Obtener información del certificado del cluster {{ current_cluster.name }}
+- name: Obtener información del certificado del cluster {{ current_cluster.name }} desde el secreto
   community.crypto.x509_certificate_info:
-    path: "{{ current_cluster.cert_file }}"
+    content: "{{ secret_data.resources[0].data['tls.crt'] | b64decode }}"
   register: cert_info
   failed_when: cert_info.not_after is not defined
+  when: secret_data.resources | length > 0
 
 - name: Obtener timestamp UNIX de la fecha de expiración
   ansible.builtin.set_fact:

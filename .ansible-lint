@@ -1,0 +1,27 @@
+---
+# Configuración de ansible-lint para el proyecto
+# Este archivo ayuda a que el editor reconozca los archivos como Ansible
+
+# Excluir directorios que no son Ansible
+exclude_paths:
+  - .cache
+  - .git
+  - .vscode
+  - ansible-env
+  - context
+  - ee
+  - informacion
+  - scripts
+
+# Reglas de linting
+skip_list:
+  - yaml[line-length]  # Permitir líneas largas en algunos casos
+
+# Configuración de roles
+roles_path:
+  - roles
+
+# Configuración de playbooks
+playbook_paths:
+  - .
+
